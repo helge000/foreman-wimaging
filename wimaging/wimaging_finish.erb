@@ -1,35 +1,19 @@
 <%#
 kind: finish
-name: Wimaging default finish
-oses:
-- Windows Server 2008
-- Windows Server 2008 R2
-- Windows Server 2012
-- Windows Server 2012 R2
-- Windows
+name: WAIK default
 # Parameters are expected to be set in Foreman (globally or per group/host)
 params:
 - windowsLicenseKey: ABCDE-ABCDE-ABCDE-ABCDE-ABCDE # Valid Windows license key
 - windowsLicenseOwner: Company, INC # Legal owner of the Windows license key
-- localAdminAccountDisabled: false
+- localAdminiAccountDisabled: false
 - ntpSever: time.windows.com,other.time.server
-- domainAdminAccount: administrator@domain.com # use this account to join domain
+- domainAdminAccount: administrator@domain.com # use tthis account to join domain
 - domainAdminAccountPasswd: Password for the domain Admin account
 - computerOU: OU=Computers,CN=domain,CN=com # Place the computer account in specified Organizational Unit
 - computerDomain: domain.com # domain to join
-- foremanDebug: false
-%>
-<%
-  # safemode renderer does not support unary negation
-  pm_set = @host.puppetmaster.empty? ? false : true
-  puppet_enabled = pm_set || @host.params['force-puppet'] && @host.params['force-puppet'] == 'true'
-  salt_enabled = @host.params['salt_master'] ? true : false
-  chef_enabled = @host.respond_to?(:chef_proxy) && @host.chef_proxy
-  foreman_debug = @host.params['foremanDebug'] == 'true' ? true : false
-%>
-
+-%>
 @echo off
-<% unless @host.params['localAdminAccountDisabled'] -%>
+<% unless host_param('localAdminiAccountDisabled') -%>
   echo Activating administrator
   net user administrator /active:yes
 <% end -%>
@@ -37,13 +21,14 @@ params:
 <% if @host.pxe_build? %>
   set ctr=0
   set nettimeout=10
+  set nwhost=<%= foreman_server_fqdn %>
 
   (echo Updating time)
   (sc config w32time start= auto)
   sc start w32time
   :ntp_testip
-    ::ipconfig /renew
-    wget.exe <%= foreman_url('provision') %>
+    ipconfig /renew
+    ping -n 1 %nwhost% > NUL
     if %errorlevel% == 0 goto ntp_testip_ok
     timeout /t 10 >NUL
     set /a ctr=ctr+1
@@ -55,71 +40,62 @@ params:
     goto ntp_testip
   :ntp_testip_ok
 
-  echo Network test OK!
+  echo Ping to %nwhost% OK!
 
-  <% if @host.params['ntpSever'] -%>
+  <% if host_param('ntpSever') %>
     echo setting time server
-    w32tm /config /manualpeerlist:<%= @host.params['ntpSever'] %> /syncfromflags:manual /update
+    w32tm /config /manualpeerlist:<%= host_param('ntpSever') %> /syncfromflags:manual /update
   <% end %>
 
   echo sync time
-  w32tm /resync
+  w32tm /resync /force
   w32tm /resync
 
   :: You can join your machine to the domain right here >
 
-  <% if @host.params['domainJoinAccount'] and @host.params['domainJoinAccountPassword'] -%>
-    echo joining domain
-    powershell.exe -OutputFormat text -ExecutionPolicy remotesigned -command c:\deploy\joinDomain.ps1
+  <% if host_param('domainAdminAccount') and host_param('domainAdminAccountPasswd') %>
+  echo joining domain
+  powershell.exe -OutputFormat text -ExecutionPolicy remotesigned -command c:\deploy\joinDomain.ps1
+  nltest /dclist:<%= host_param('computerDomain') %>
+  IF %ERRORLEVEL% NEQ 0 (
+    echo Domain join not successfull, exiting
+    exit 1
+  )
   <% end %>
 
   :: < You can join your machine to the domain right here
 
-  <% if @host.params['localAdminAccountDisabled'] %>
-    echo Disabling %tempAdminUser%
-    net user %tempAdminUser% %tempAdminUser% /active:no
+  <% if host_param('localAdminiAccountDisabled') %>
+      echo Disabling %tempAdminUser%
+      net user %tempAdminUser% %tempAdminUser% /active:no
   <% end %>
-  
-  <% if foreman_debug != true -%>
-    echo Safely remove wimaging files
-    sdelete.exe -accepteula -p 2 -r c:\wimaging
-    sdelete.exe -accepteula -p 2 c:\Windows\Panther\unattend.xml
-    sdelete.exe -accepteula -p 2 C:\Windows\Setup\Scripts\SetupComplete.cmd
-    sdelete.exe -accepteula -p 2 -r c:\minint
-    sdelete.exe -accepteula -p 2 -r c:\wimaging
+  <% unless host_param_true?('waikDebugMode') %>
+  echo safely remove files
+  sdelete.exe -accepteula -p 2 -r c:\wimaging
+  sdelete.exe -accepteula -p 2 c:\Windows\Panther\unattend.xml
+  sdelete.exe -accepteula -p 2 C:\Windows\Setup\Scripts\SetupComplete.cmd
+  sdelete.exe -accepteula -p 2 -r c:\minint
+  sdelete.exe -accepteula -p 2 -r c:\wimaging
   <% end %>
 
-  <% if puppet_enabled %>
-    echo Installing puppet
-    start /w "" msiexec /qn /i C:\extras\puppet.msi PUPPET_AGENT_STARTUP_MODE=Manual PUPPET_MASTER_SERVER=<%= @host.puppetmaster -%> PUPPET_AGENT_ACCOUNT_DOMAIN=<%= @host.domain -%> PUPPET_AGENT_ACCOUNT_USER=administrator PUPPET_AGENT_ACCOUNT_PASSWORD="<%= @host.params['domainAdminAccountPassword'] -%>"
-    echo set puppet to auto start
-    sc config puppet start= auto
-    sc query puppet
-    rem this is rather hacky
-    rem call "C:\Program Files\Puppet Labs\Puppet\bin\puppet.bat" agent -t -v --tags no_such_tag
+  <% if snippet "WAIK extraFinishCommands" -%>
+  echo Running extra commands
+  <%= snippet "WAIK extraFinishCommands" %>
+  <% unless host_param_true?('waikDebugMode') -%>
+  echo cleaning up extras
+  sdelete.exe -accepteula -p 2 -r c:\extras
+  <% end -%>
   <% end -%>
 
-  <% if snippets "Wimaging extraFinishCommands" -%>
-    echo Running extra commands
-    <%= snippets "Wimaging extraFinishCommands" %>
-  <% end -%>
-
-  echo Tell foreman build has finished
+  echo Tell foreman build mode has finished
   wget.exe <%= foreman_url('built') %>
 
-  <% if foreman_debug != true -%>
-    echo Cleaning up extras
-    sdelete.exe -accepteula -p 2 -r c:\extras
-    echo Safely removing c:\deploy
-    sdelete.exe -accepteula -p 2 -r c:\deploy  
-
-    echo remove leftover directories
-    rmdir /s /q c:\wimaging
-    rmdir /s /q c:\minint
-    rmdir /s /q c:\deploy
-    rmdir /s /q c:\extras
-
-    echo rebooting...
-    shutdown /r /t 5
-  <% end -%>  
+  <% unless host_param_true?('waikDebugMode') -%>
+  echo remove leftover directories
+  rmdir /s /q c:\wimaging
+  rmdir /s /q c:\minint
+  rmdir /s /q c:\extras
+  del /q /s C:\.gitignore
+  start "" sdelete.exe -accepteula -p 2 -r c:\deploy
+  <% end -%>
 <% end -%>

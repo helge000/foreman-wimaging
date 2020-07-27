@@ -1,13 +1,12 @@
 <%#
 kind: snippet
-name: Wimaging extraFinishCommands
-oses:
-- Windows Server 2008
-- Windows Server 2008 R2
-- Windows Server 2012
-- Windows Server 2012 R2
-- Windows
+name: WAIK extraFinishCommands
 # Extra commands run at the end of the finish script. Do not change the snippet name
-# make commands are executed synchronously. Otherwise they might get interrupted by reboot later on
-%>
+# make commands are executed syncronously. Otherweise they might get interrupted by reboot later on
+-%>
 @echo off
+echo Installing puppet
+start /w "" msiexec /qn /i C:\extras\puppet-agent.msi PUPPET_AGENT_STARTUP_MODE=Automatic PUPPET_MASTER_SERVER=<%= @host.puppetmaster -%><% if @host.params['puppetAgentAccountDomain'] && @host.params['puppetAgentAccountUser'] && @host.params['puppetAgentAccountPassword'] %> PUPPET_AGENT_ACCOUNT_DOMAIN=<%= @host.params['puppetAgentAccountDomain'] -%> PUPPET_AGENT_ACCOUNT_USER=<%= @host.params['puppetAgentAccountUser'] -%> PUPPET_AGENT_ACCOUNT_PASSWORD="<%= @host.params['puppetAgentAccountPassword'] -%>"<%end%>
+
+:: wait for puppet to start and generate certificates
+timeout /t 60 >NUL

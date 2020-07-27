@@ -1,27 +1,18 @@
 <%#
 kind: provision
-name: Wimaging default provision
-oses:
-- Windows Server 2008
-- Windows Server 2008 R2
-- Windows Server 2012
-- Windows Server 2012 R2
-- Windows
-# Parameters are expected to be set in Foreman (globally or per group/host)
+name: WAIK default
 params:
 - windowsLicenseKey: ABCDE-ABCDE-ABCDE-ABCDE-ABCDE # Valid Windows license key
 - windowsLicenseOwner: Company, INC # Legal owner of the Windows license key
 - systemLocale: en-US
 - systemUILanguage: en-US
-- systemTimeZone: GMT Standard Time #see https://msdn.microsoft.com/en-us/library/ms912391(v=winembedded.11).aspx
+- systemTimeZone: Pacific Standard Time #see https://msdn.microsoft.com/en-us/library/ms912391(v=winembedded.11).aspx
 - wimImageName = Windows 8.1 Pro # Image name seems only necessary if the WIM contains more than one image
-%>
-<%
-  system_locale = @host.params['systemLocale'] ? @host.params['systemLocale'] : 'en-US' 
-  system_ui_lang = @host.params['systemUILanguage'] ? @host.params['systemUILanguage'] : 'en-US'
-  setup_ui_lang = 'en-US'
-  system_timezone = @host.params['systemTimeZone'] ? @host.params['systemTimeZone'] : 'GMT Standard Time'
-%>
+- embeddedMode = false # Handles Winodws 10+ embedded features
+- netbiosComputerDomain # DOMAIN: Netbios domain name
+- domainAdminAccountPasswd # Password for the domain join account
+- domainAdminAccount # Domain join account
+-%>
 <?xml version="1.0" encoding="utf-8"?>
 <unattend xmlns="urn:schemas-microsoft-com:unattend">
     <servicing></servicing>
@@ -39,7 +30,7 @@ params:
                 <OSImage>
                     <InstallFrom>
                         <MetaData wcm:action="add">
-                                <Value><%= @host.params['wimImageName'] -%></Value>  
+                                <Value><%= host_param('wimImageName') -%></Value>
                         </MetaData>
                     </InstallFrom>
                     <InstallToAvailablePartition>true</InstallToAvailablePartition>
@@ -52,37 +43,55 @@ params:
         </component>
         <component name="Microsoft-Windows-International-Core-WinPE" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
             <SetupUILanguage>
-                <UILanguage><%= setup_ui_lang %></UILanguage>
+                <UILanguage>en-US</UILanguage>
             </SetupUILanguage>
-              <InputLocale><%= system_locale %></InputLocale>
-              <SystemLocale><%= system_locale %></SystemLocale>
-              <UILanguageFallback><%= setup_ui_lang %></UILanguageFallback>
-              <UILanguage><%= system_ui_lang %></UILanguage>
-              <UserLocale><%= system_locale %></UserLocale>
+            <% if host_param('systemLocale') -%>
+              <InputLocale><%= host_param('systemLocale') %></InputLocale>
+              <SystemLocale><%= host_param('systemLocale') %></SystemLocale>
+              <UILanguageFallback>en-US</UILanguageFallback>
+              <UILanguage><%= host_param('systemUILanguage') %></UILanguage>
+              <UserLocale><%= host_param('systemLocale') %></UserLocale>
+            <% else -%>
+               <InputLocale>en-US</InputLocale>
+              <SystemLocale>en-US</SystemLocale>
+              <UILanguageFallback>en-US</UILanguageFallback>
+              <UILanguage>en-US</UILanguage>
+              <UserLocale>en-US</UserLocale>
+            <% end -%>
         </component>
     </settings>
     <settings pass="oobeSystem">
         <component name="Microsoft-Windows-International-Core" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-              <InputLocale><%= system_locale %></InputLocale>
-              <SystemLocale><%= system_locale %></SystemLocale>
-              <UILanguageFallback><%= setup_ui_lang %></UILanguageFallback>
-              <UILanguage><%= system_ui_lang %></UILanguage>
-              <UserLocale><%= system_locale %></UserLocale>
+            <% if host_param('systemLocale') -%>
+              <InputLocale><%= host_param('systemLocale') -%></InputLocale>
+              <SystemLocale><%= host_param('systemLocale') -%></SystemLocale>
+              <UILanguageFallback>en-US</UILanguageFallback>
+              <UILanguage><%= host_param('systemUILanguage') -%></UILanguage>
+              <UserLocale><%= host_param('systemLocale') -%></UserLocale>
+            <% else -%>
+               <InputLocale>en-US</InputLocale>
+              <SystemLocale>en-US</SystemLocale>
+              <UILanguageFallback>en-US</UILanguageFallback>
+              <UILanguage>en-US</UILanguage>
+              <UserLocale>en-US</UserLocale>
+            <% end -%>
         </component>
         <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
             <UserAccounts>
                 <AdministratorPassword>
-                    <PlainText>false</PlainText>
-                    <Value><%= Base64.encode64(Encoding::Converter.new("UTF-8", "UTF-16LE",:undef => nil).convert(Base64.decode64(root_pass)+"AdministratorPassword")).delete!("\n").chomp %></Value>
+                  <Value><% begin %><%= Base64.encode64(Encoding::Converter.new("UTF-8", "UTF-16LE",:undef => nil).convert("#{Base64.decode64(root_pass)}AdministratorPassword")).delete("\n").chomp %></Value>
+                  <PlainText>false</PlainText>
+                  <% rescue StandardError %><%= host_param('fallbackPassword') %></Value>
+                  <PlainText>true</PlainText><% end %>
                 </AdministratorPassword>
-                <% if snippet('Wimaging local users') -%>
-                  <%= snippet('Wimaging local users') -%>
+                <% if snippet('WAIK local users') -%>
+                  <%= snippet('WAIK local users') -%>
                 <% end %>
             </UserAccounts>
-            <TimeZone><%= system_timezone -%></TimeZone>
-            <% if @host.params['windowsLicenseOwner'] -%>
-              <RegisteredOrganization><%= @host.params['windowsLicenseOwner'] -%></RegisteredOrganization>
-              <RegisteredOwner><%= @host.params['windowsLicenseOwner'] -%></RegisteredOwner>
+            <TimeZone><%= host_param('systemTimeZone') -%></TimeZone>
+            <% if host_param('windowsLicenseOwner') -%>
+              <RegisteredOrganization><%= host_param('windowsLicenseOwner') -%></RegisteredOrganization>
+              <RegisteredOwner><%= host_param('windowsLicenseOwner') -%></RegisteredOwner>
             <% end -%>
             <OOBE>
                 <HideEULAPage>true</HideEULAPage>
@@ -96,29 +105,55 @@ params:
                 <HideWirelessSetupInOOBE>true</HideWirelessSetupInOOBE>
             </OOBE>
             <ShowWindowsLive>false</ShowWindowsLive>
-            <% if @host.params['windowsLicenseKey'] -%>
-              <ProductKey><%= @host.params['windowsLicenseKey'].to_s -%></ProductKey>
+            <% if host_param('windowsLicenseKey') -%>
+              <ProductKey><%= host_param('windowsLicenseKey').to_s -%></ProductKey>
             <% end -%>
         </component>
     </settings>
     <settings pass="specialize">
         <component name="Microsoft-Windows-International-Core" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-              <InputLocale><%= system_locale %></InputLocale>
-              <SystemLocale><%= system_locale %></SystemLocale>
-              <UILanguageFallback><%= setup_ui_lang %></UILanguageFallback>
-              <UILanguage><%= system_ui_lang %></UILanguage>
-              <UserLocale><%= system_locale %></UserLocale>
+            <% if host_param('systemLocale') -%>
+              <InputLocale><%= host_param('systemLocale') -%></InputLocale>
+              <SystemLocale><%= host_param('systemLocale') -%></SystemLocale>
+              <UILanguage><%= host_param('systemUILanguage') -%></UILanguage>
+              <UILanguageFallback>en-US</UILanguageFallback>
+              <UserLocale><%= host_param('systemLocale') -%></UserLocale>
+            <% else -%>
+              <InputLocale>en-US</InputLocale>
+              <SystemLocale>en-US</SystemLocale>
+              <UILanguage>en-US</UILanguage>
+              <UILanguageFallback>en-US</UILanguageFallback>
+              <UserLocale>en-US</UserLocale>
+            <% end -%>
         </component>
+        <% if @host.operatingsystem.major.to_i <= 10 && host_param_true?('embeddedMode') %>
+        <component name="Microsoft-Windows-Embedded-BootExp" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="NonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+            <DisableBootMenu>1</DisableBootMenu>
+            <DisplayDisabled>1</DisplayDisabled>
+            <HideAllBootUI>1</HideAllBootUI>
+        </component>
+        <component name="Microsoft-Windows-Embedded-EmbeddedLogon" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="NonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+            <AnimationDisabled>1</AnimationDisabled>
+            <BrandingNeutral>61</BrandingNeutral>
+            <HideAutoLogonUI>1</HideAutoLogonUI>
+            <NoLockScreen>1</NoLockScreen>
+            <UIVerbosityLevel>1</UIVerbosityLevel>
+        </component>
+        <% end -%>
         <component name="Microsoft-Windows-IE-ESC" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
             <IEHardenAdmin>false</IEHardenAdmin>
         </component>
         <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
             <ComputerName><%= @host.shortname -%></ComputerName>
-            <% if @host.params['windowsLicenseOwner'] -%>
-              <RegisteredOrganization><%= @host.params['windowsLicenseOwner'] -%></RegisteredOrganization>
-              <RegisteredOwner><%= @host.params['windowsLicenseOwner'] -%></RegisteredOwner>
+            <% if host_param('windowsLicenseOwner') -%>
+              <RegisteredOrganization><%= host_param('windowsLicenseOwner') -%></RegisteredOrganization>
+              <RegisteredOwner><%= host_param('windowsLicenseOwner') -%></RegisteredOwner>
             <% end -%>
-              <TimeZone><%= system_timezone -%></TimeZone>
+            <% if host_param('systemTimeZone') -%>
+              <TimeZone><%= host_param('systemTimeZone') -%></TimeZone>
+            <% else -%>
+              <TimeZone>Pacific Standard Time</TimeZone>
+            <% end -%>
         </component>
         <component name="Networking-MPSSVC-Svc" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
             <DomainProfile_EnableFirewall>false</DomainProfile_EnableFirewall>
@@ -134,8 +169,22 @@ params:
         <component name="Microsoft-Windows-TerminalServices-RDP-WinStationExtensions" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
             <SecurityLayer>1</SecurityLayer>
             <UserAuthentication>0</UserAuthentication>
-        </component>
+        </component><% if host_param('computerDomain') %>
+        <!-- this is noop, debug
+        <component name="Microsoft-Windows-UnattendedJoin" processorArchitecture="x86" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+            <Identification>
+<%# If DebugJoin is specified, a trace file is generated during the domain join process (%WINDIR%\\Panther\UnattendGC\UnattendedJoinDCLocator.etl) -%>
+                <DebugJoin><% if host_param('waikDebugMode') %>true<%else %>false<%end%></DebugJoin>
+                <Credentials>
+                    <Domain><%= host_param('domainAdminAccount').split('@').last %></Domain>
+                    <Password><%= host_param('domainAdminAccountPasswd') %></Password>
+                    <Username><%= host_param('domainAdminAccount').split('@').first %></Username>
+                </Credentials>
+                <JoinDomain><%= host_param('computerDomain') %></JoinDomain>
+                <MachineObjectOU><%= snippet_if_exists('WAIK OU from hostgroup') %></MachineObjectOU>
+                <UnsecureJoin>False</UnsecureJoin>
+            </Identification>
+        </component><% end %> -->
     </settings>
     <cpi:offlineImage cpi:source="catalog:c:/deploy/wimaging/sources/win81x64/sources/install_windows 8.1 pro.clg" xmlns:cpi="urn:schemas-microsoft-com:cpi" />
 </unattend>
-

@@ -1,14 +1,9 @@
 <%#
 kind: PXELinux
-name: Wimaging default PXELinux
-oses:
-- Windows Server 2008
-- Windows Server 2008 R2
-- Windows Server 2012
-- Windows Server 2012 R2
-- Windows
-%>
-DEFAULT menu    
-LABEL menu         
-     COM32 linux.c32 boot/wimboot
-     APPEND initrdfile=<%= @host.operatingsystem.bootfile(@host.arch,:bcd) %>,<%= @host.operatingsystem.bootfile(@host.arch,:bootsdi) %>,<%= @host.operatingsystem.bootfile(@host.arch,:bootwim) %>
+name: WAIK default PXELinux
+-%>
+<% pxe_subpath = "boot/windows-x64" -%>
+DEFAULT menu
+LABEL menu
+     COM32 linux.c32 <%= pxe_subpath -%>/wimboot
+     APPEND initrdfile=<%= pxe_subpath -%>/bcd,<%= pxe_subpath -%>/boot.sdi,<%= pxe_subpath -%>/boot.wim
